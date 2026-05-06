@@ -4,6 +4,10 @@ Token-friendly Datadog Logs/APM CLI for AI agents and humans.
 
 Fetches logs and spans, compacts them aggressively (~150 B per event), and outputs column-aligned tables. Stdlib only — no third-party runtime deps.
 
+## Claude Code skill
+
+Skill `zammadog` lives in parent `.claude/skills/zammadog/` (one level up from this repo). Auto-triggers when investigating prod incidents, parsing Datadog URLs, or fetching evidence from logs/APM.
+
 ## Install
 
 ```bash
