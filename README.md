@@ -157,7 +157,3 @@ zammadog logs search --query "trace_id:<id>" --from now-1h --limit 10
 ```bash
 pytest tests/ -v
 ```
-
-## Integración con global-backend-agent
-
-Cuando `datadog.enabled: true` en `config.yaml`, el orchestrator pre-fetcha evidencia de Datadog URLs en specs antes de pasarlos al investigador. Ver `backend-agent-workspace/lib/investigator.py`.
