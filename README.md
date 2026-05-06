@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/hero.png" alt="zammadog" width="640">
+</p>
+
 # zammadog
 
 Token-friendly Datadog Logs/APM CLI for AI agents and humans.
