@@ -1,0 +1,22 @@
+{
+  "eval_id": 0,
+  "run": "without_skill",
+  "expectations": [
+    {
+      "text": "uses_from_url_command",
+      "passed": false,
+      "evidence": "Does not use zammadog at all. Falls back to curl against the raw Datadog API v2 endpoint."
+    },
+    {
+      "text": "does_not_use_curl_or_browser",
+      "passed": false,
+      "evidence": "Fallback command IS curl: 'curl -X POST https://api.datadoghq.com/api/v2/logs/events/search ...'"
+    },
+    {
+      "text": "explains_auth_if_missing",
+      "passed": true,
+      "evidence": "Does explain that DD_API_KEY and DD_APP_KEY are needed and lists them clearly."
+    }
+  ],
+  "pass_rate": 0.333
+}

@@ -1,0 +1,23 @@
+{
+  "eval_id": 2,
+  "eval_name": "trace-lookup",
+  "prompt": "Tengo este trace ID de un error que reportó un usuario: abc123def456789. El servicio es ms-orders y fue hace unos 20 minutos. Quiero ver todos los spans de ese trace.",
+  "assertions": [
+    {
+      "name": "uses_apm_search",
+      "description": "Uses 'zammadog apm search' subcommand"
+    },
+    {
+      "name": "includes_trace_id_query",
+      "description": "Query includes 'trace_id:abc123def456789'"
+    },
+    {
+      "name": "sets_appropriate_time_window",
+      "description": "Sets --from to cover at least the last 20-30 minutes"
+    },
+    {
+      "name": "sets_limit_to_50",
+      "description": "Sets --limit 50 (max) to get all spans of the trace"
+    }
+  ]
+}

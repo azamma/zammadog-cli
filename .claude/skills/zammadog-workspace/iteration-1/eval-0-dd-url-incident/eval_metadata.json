@@ -1,0 +1,19 @@
+{
+  "eval_id": 0,
+  "eval_name": "dd-url-incident",
+  "prompt": "Tenemos un incidente en producción. Acá está el link de Datadog que mandó el equipo de guardia: https://app.datadoghq.com/logs?query=service%3Ams-payments+status%3Aerror&from_ts=now-1h&to_ts=now — podés traerme el resumen de qué está pasando?",
+  "assertions": [
+    {
+      "name": "uses_from_url_command",
+      "description": "Uses 'zammadog from-url' with the exact URL provided"
+    },
+    {
+      "name": "does_not_use_curl_or_browser",
+      "description": "Does not try to use curl, wget, or browser to fetch the Datadog URL directly"
+    },
+    {
+      "name": "explains_auth_if_missing",
+      "description": "If DD_API_KEY/DD_APP_KEY not set, explains what to export rather than failing silently"
+    }
+  ]
+}

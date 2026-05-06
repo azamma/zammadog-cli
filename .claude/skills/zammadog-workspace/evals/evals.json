@@ -1,0 +1,69 @@
+{
+  "skill_name": "zammadog",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Tenemos un incidente en producción. Acá está el link de Datadog que mandó el equipo de guardia: https://app.datadoghq.com/logs?query=service%3Ams-payments+status%3Aerror&from_ts=now-1h&to_ts=now — podés traerme el resumen de qué está pasando?",
+      "expected_output": "Claude should use 'zammadog from-url' with the provided URL, explain the command it's running, and interpret the output (or explain the auth requirements if keys are missing). Should NOT try to open a browser or use curl manually.",
+      "assertions": [
+        {
+          "name": "uses_from_url_command",
+          "description": "Uses 'zammadog from-url' with the exact URL provided"
+        },
+        {
+          "name": "does_not_use_curl_or_browser",
+          "description": "Does not try to use curl, wget, or browser to fetch the Datadog URL directly"
+        },
+        {
+          "name": "explains_auth_if_missing",
+          "description": "If DD_API_KEY/DD_APP_KEY not set, explains what to export rather than failing silently"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "Necesito saber cuántos errores está tirando cada servicio en los últimos 30 minutos en Datadog. Tengo las credenciales seteadas en el ambiente.",
+      "expected_output": "Claude should use 'zammadog logs aggregate' with --group-by 'service,status' and --from now-30m. Should show the command clearly and explain what the output means.",
+      "assertions": [
+        {
+          "name": "uses_logs_aggregate",
+          "description": "Uses 'zammadog logs aggregate' subcommand (not logs search)"
+        },
+        {
+          "name": "includes_group_by_service_status",
+          "description": "Includes --group-by with service and status facets"
+        },
+        {
+          "name": "sets_from_30m",
+          "description": "Sets --from to now-30m or equivalent"
+        }
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Tengo este trace ID de un error que reportó un usuario: abc123def456789. El servicio es ms-orders y fue hace unos 20 minutos. Quiero ver todos los spans de ese trace.",
+      "expected_output": "Claude should use 'zammadog apm search --query trace_id:abc123def456789' with appropriate time range. Should explain the command and how to interpret the spans table.",
+      "assertions": [
+        {
+          "name": "uses_apm_search",
+          "description": "Uses 'zammadog apm search' subcommand"
+        },
+        {
+          "name": "includes_trace_id_query",
+          "description": "Query includes 'trace_id:abc123def456789'"
+        },
+        {
+          "name": "sets_appropriate_time_window",
+          "description": "Sets --from to cover the last ~20-30 minutes (not default 1h is fine too, but not wider than 1h)"
+        },
+        {
+          "name": "sets_limit_to_50",
+          "description": "Sets --limit 50 (max) since we want ALL spans of a trace"
+        }
+      ],
+      "files": []
+    }
+  ]
+}

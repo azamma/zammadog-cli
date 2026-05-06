@@ -1,0 +1,22 @@
+{
+  "eval_id": 1,
+  "run": "without_skill",
+  "expectations": [
+    {
+      "text": "uses_logs_aggregate",
+      "passed": false,
+      "evidence": "Uses curl against Datadog API directly. No zammadog. Offers two approaches (APM metrics query + Logs aggregate API) both via curl."
+    },
+    {
+      "text": "includes_group_by_service_status",
+      "passed": false,
+      "evidence": "Groups only by 'service', not service+status. Matches curl payload: 'facet: service' only."
+    },
+    {
+      "text": "sets_from_30m",
+      "passed": true,
+      "evidence": "Both curl examples use 'now-30m' or equivalent epoch calculation (NOW - 1800)."
+    }
+  ],
+  "pass_rate": 0.333
+}

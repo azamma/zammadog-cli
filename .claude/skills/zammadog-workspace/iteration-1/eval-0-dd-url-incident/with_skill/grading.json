@@ -1,0 +1,22 @@
+{
+  "eval_id": 0,
+  "run": "with_skill",
+  "expectations": [
+    {
+      "text": "uses_from_url_command",
+      "passed": true,
+      "evidence": "Response clearly shows 'zammadog from-url \"https://app.datadoghq.com/logs?...\"' as the first command. Actually ran it and got the expected error."
+    },
+    {
+      "text": "does_not_use_curl_or_browser",
+      "passed": true,
+      "evidence": "No curl or browser mentioned for the Datadog URL itself. Follow-up investigation section suggests zammadog subcommands, not curl."
+    },
+    {
+      "text": "explains_auth_if_missing",
+      "passed": true,
+      "evidence": "Shows exact 'export DD_API_KEY=... DD_APP_KEY=...' block and explains DD_SITE. Also shows actual error message from running zammadog."
+    }
+  ],
+  "pass_rate": 1.0
+}

@@ -1,0 +1,27 @@
+{
+  "eval_id": 2,
+  "run": "without_skill",
+  "expectations": [
+    {
+      "text": "uses_apm_search",
+      "passed": false,
+      "evidence": "No zammadog. Suggests curl against /api/v2/spans/events or opening the Datadog UI URL directly."
+    },
+    {
+      "text": "includes_trace_id_query",
+      "passed": true,
+      "evidence": "Does include 'trace_id:abc123def456789' in the suggested curl filter query."
+    },
+    {
+      "text": "sets_appropriate_time_window",
+      "passed": true,
+      "evidence": "Suggests ~30-minute window to cover the 20-minute offset."
+    },
+    {
+      "text": "sets_limit_to_50",
+      "passed": false,
+      "evidence": "No explicit limit mentioned in curl approach. UI alternative doesn't specify limit."
+    }
+  ],
+  "pass_rate": 0.5
+}

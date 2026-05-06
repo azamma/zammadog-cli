@@ -1,0 +1,22 @@
+{
+  "eval_id": 1,
+  "run": "with_skill",
+  "expectations": [
+    {
+      "text": "uses_logs_aggregate",
+      "passed": true,
+      "evidence": "Command is exactly 'zammadog logs aggregate ...' — correct subcommand chosen over logs search."
+    },
+    {
+      "text": "includes_group_by_service_status",
+      "passed": false,
+      "evidence": "Uses '--group-by \"service\"' only. Missing 'status' facet. Skill example shows 'service,status' but agent used only 'service'. Close but assertion requires both."
+    },
+    {
+      "text": "sets_from_30m",
+      "passed": true,
+      "evidence": "Uses '--from now-30m' exactly matching the 30-minute window from the prompt."
+    }
+  ],
+  "pass_rate": 0.667
+}

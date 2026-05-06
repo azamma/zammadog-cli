@@ -1,0 +1,84 @@
+{
+  "skill_name": "zammadog",
+  "iteration": 1,
+  "configurations": [
+    {
+      "name": "with_skill",
+      "evals": [
+        {
+          "eval_id": 0,
+          "eval_name": "dd-url-incident",
+          "pass_rate": 1.0,
+          "assertions_passed": 3,
+          "assertions_total": 3,
+          "duration_ms": 72954,
+          "total_tokens": 20092
+        },
+        {
+          "eval_id": 1,
+          "eval_name": "aggregate-errors",
+          "pass_rate": 0.667,
+          "assertions_passed": 2,
+          "assertions_total": 3,
+          "duration_ms": 71425,
+          "total_tokens": 19012
+        },
+        {
+          "eval_id": 2,
+          "eval_name": "trace-lookup",
+          "pass_rate": 1.0,
+          "assertions_passed": 4,
+          "assertions_total": 4,
+          "duration_ms": 33088,
+          "total_tokens": 16006
+        }
+      ],
+      "mean_pass_rate": 0.889,
+      "mean_duration_ms": 59156,
+      "mean_tokens": 18370
+    },
+    {
+      "name": "without_skill",
+      "evals": [
+        {
+          "eval_id": 0,
+          "eval_name": "dd-url-incident",
+          "pass_rate": 0.333,
+          "assertions_passed": 1,
+          "assertions_total": 3,
+          "duration_ms": 30373,
+          "total_tokens": 13715
+        },
+        {
+          "eval_id": 1,
+          "eval_name": "aggregate-errors",
+          "pass_rate": 0.333,
+          "assertions_passed": 1,
+          "assertions_total": 3,
+          "duration_ms": 43972,
+          "total_tokens": 15639
+        },
+        {
+          "eval_id": 2,
+          "eval_name": "trace-lookup",
+          "pass_rate": 0.5,
+          "assertions_passed": 2,
+          "assertions_total": 4,
+          "duration_ms": 32390,
+          "total_tokens": 14172
+        }
+      ],
+      "mean_pass_rate": 0.389,
+      "mean_duration_ms": 35578,
+      "mean_tokens": 14509
+    }
+  ],
+  "delta_pass_rate": 0.5,
+  "analyst_notes": [
+    "with_skill: 88.9% pass rate vs 38.9% baseline — +50pp delta. Strong signal the skill works.",
+    "Eval 1 (aggregate-errors): only miss in with_skill — agent used --group-by service only, not service,status. Skill example in the 'typical workflow' uses service,status but the quick reference shows only 'service'. Ambiguity to fix.",
+    "without_skill baseline is faster (35s vs 59s avg) because it writes less — shorter curl snippets vs fuller explanations. Token cost is comparable.",
+    "Eval 2 (trace-lookup): perfect with_skill. Key differentiator: --limit 50 rationale (get ALL spans) is explicit in skill and agent followed it. Baseline missed this.",
+    "Eval 0 (dd-url-incident): with_skill actually installed and ran zammadog, confirming graceful auth error. Baseline produced curl fallback — correct from a generic standpoint but misses the zammadog pattern entirely."
+  ]
+}

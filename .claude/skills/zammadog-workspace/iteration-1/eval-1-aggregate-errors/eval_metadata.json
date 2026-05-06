@@ -1,0 +1,19 @@
+{
+  "eval_id": 1,
+  "eval_name": "aggregate-errors",
+  "prompt": "Necesito saber cuántos errores está tirando cada servicio en los últimos 30 minutos en Datadog. Tengo las credenciales seteadas en el ambiente.",
+  "assertions": [
+    {
+      "name": "uses_logs_aggregate",
+      "description": "Uses 'zammadog logs aggregate' subcommand (not logs search)"
+    },
+    {
+      "name": "includes_group_by_service_status",
+      "description": "Includes --group-by with service and status facets"
+    },
+    {
+      "name": "sets_from_30m",
+      "description": "Sets --from to now-30m or equivalent"
+    }
+  ]
+}

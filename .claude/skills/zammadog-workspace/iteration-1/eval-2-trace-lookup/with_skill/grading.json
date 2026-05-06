@@ -1,0 +1,27 @@
+{
+  "eval_id": 2,
+  "run": "with_skill",
+  "expectations": [
+    {
+      "text": "uses_apm_search",
+      "passed": true,
+      "evidence": "Command uses 'zammadog apm search' exactly."
+    },
+    {
+      "text": "includes_trace_id_query",
+      "passed": true,
+      "evidence": "Query is 'service:ms-orders trace_id:abc123def456789' — includes the exact trace_id from the prompt."
+    },
+    {
+      "text": "sets_appropriate_time_window",
+      "passed": true,
+      "evidence": "Uses '--from now-30m', which covers the ~20 minutes mentioned in the prompt with margin."
+    },
+    {
+      "text": "sets_limit_to_50",
+      "passed": true,
+      "evidence": "Uses '--limit 50' explicitly, with reasoning that this gets all spans of a distributed trace."
+    }
+  ],
+  "pass_rate": 1.0
+}
