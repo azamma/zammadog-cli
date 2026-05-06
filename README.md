@@ -6,7 +6,7 @@ Fetches logs and spans, compacts them aggressively (~150 B per event), and outpu
 
 ## Claude Code skill
 
-Skill `zammadog` lives in parent `.claude/skills/zammadog/` (one level up from this repo). Auto-triggers when investigating prod incidents, parsing Datadog URLs, or fetching evidence from logs/APM.
+Skill `zammadog` lives at `skills/zammadog/` in repo root. Symlink or copy to `~/.claude/skills/` to enable. Auto-triggers when investigating prod incidents, parsing Datadog URLs, or fetching evidence from logs/APM.
 
 ## Install
 
