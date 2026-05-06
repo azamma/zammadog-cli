@@ -341,7 +341,7 @@ thead th.desc::after {{ content: " ↓"; }}
 tbody tr {{ border-bottom: 1px solid var(--border); transition: background .1s; }}
 tbody tr:last-child {{ border-bottom: none; }}
 tbody tr:hover {{ background: var(--bg3); }}
-tbody td {{ padding: 7px 10px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }}
+tbody td {{ padding: 7px 10px; white-space: nowrap; }}
 .row-n1 {{ background: rgba(239,68,68,.06); }}
 .row-slow {{ background: rgba(245,158,11,.06); }}
 
@@ -645,7 +645,7 @@ const SWATCH = ['#818cf8','#34d399','#f59e0b','#ef4444','#38bdf8','#a78bfa','#fb
 function hbar(label, value, maxVal, color, annotation, fullLabel) {{
   const pct = Math.max(2, Math.round((value || 0) / maxVal * 100));
   return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:12px">
-    <div style="width:150px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);text-align:right" title="${{esc(fullLabel || label)}}">${{esc(label)}}</div>
+    <div style="flex-shrink:0;white-space:nowrap;color:var(--muted);text-align:right;font-family:var(--mono,ui-monospace,monospace);font-size:11px" title="${{esc(fullLabel || label)}}">${{esc(label)}}</div>
     <div style="flex:1;min-width:60px;background:var(--bg3);border-radius:3px;height:16px;overflow:hidden">
       <div style="width:${{pct}}%;background:${{color}};height:100%;border-radius:3px;opacity:.85"></div>
     </div>
@@ -669,7 +669,7 @@ function drawLatencyChart() {{
   el.innerHTML = legend + top.map(r => {{
     const color = r.cpt > 1 ? '#ef4444' : (r.avg > 500 ? '#f59e0b' : '#818cf8');
     const ann = `min <strong>${{r.min ?? '-'}}</strong> / avg <strong>${{r.avg}}</strong> / max <strong>${{r.max ?? '-'}}</strong> ms`;
-    return hbar(shorten(r.resource, 22), r.avg, maxVal, color, ann, r.resource);
+    return hbar(r.resource, r.avg, maxVal, color, ann, r.resource);
   }}).join('');
 }}
 
@@ -682,7 +682,7 @@ function drawCptChart() {{
   const legend = `<div style="font-size:11px;color:var(--muted);margin-bottom:10px"><span style="color:#ef4444">red = N+1 (&gt;1 call/trace)</span></div>`;
   el.innerHTML = legend + top.map(r => {{
     const color = r.cpt > 1 ? '#ef4444' : '#818cf8';
-    return hbar(shorten(r.resource, 22), r.cpt, maxVal, color, `${{r.cpt}} calls/tr · ${{r.total}} total`, r.resource);
+    return hbar(r.resource, r.cpt, maxVal, color, `${{r.cpt}} calls/tr · ${{r.total}} total`, r.resource);
   }}).join('');
 }}
 
