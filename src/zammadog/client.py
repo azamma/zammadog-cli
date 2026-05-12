@@ -23,6 +23,18 @@ class DatadogError(Exception):
         self.body = body
 
 
+@dataclass
+class RateLimit:
+    limit: int = 0
+    remaining: int = 0
+    reset_s: int = 0
+    period_s: int = 0
+
+    @property
+    def pct_remaining(self) -> float:
+        return (self.remaining / self.limit) if self.limit else 1.0
+
+
 def _rel_to_epoch_ms(t: str) -> int:
     """Convert relative ('now-15m') or RFC3339 to epoch ms."""
     if t.startswith("now"):
@@ -64,6 +76,24 @@ class DatadogClient:
     api_key: str = ""
     app_key: str = ""
     timeout_s: float = HTTP_TIMEOUT_S
+    last_rate_limit: RateLimit | None = field(default=None)
+
+    def _capture_rate_limit(self, headers) -> None:
+        def _int(name: str) -> int:
+            v = headers.get(name) or headers.get(name.lower())
+            try:
+                return int(v) if v is not None else 0
+            except (TypeError, ValueError):
+                return 0
+        limit = _int("X-RateLimit-Limit")
+        if not limit:
+            return
+        self.last_rate_limit = RateLimit(
+            limit=limit,
+            remaining=_int("X-RateLimit-Remaining"),
+            reset_s=_int("X-RateLimit-Reset"),
+            period_s=_int("X-RateLimit-Period"),
+        )
 
     def _request(self, method: str, url: str, payload: dict | None = None) -> dict:
         data = json.dumps(payload).encode() if payload is not None else None
@@ -72,15 +102,16 @@ class DatadogClient:
         req.add_header("DD-APPLICATION-KEY", self.app_key)
         req.add_header("Content-Type", "application/json")
 
-        def _call() -> bytes:
-            resp = urllib.request.urlopen(req, timeout=self.timeout_s)
-            return resp.read()
+        def _call():
+            return urllib.request.urlopen(req, timeout=self.timeout_s)
 
         for attempt in range(RETRY_5XX):
             try:
-                body_bytes = _call()
-                return json.loads(body_bytes.decode("utf-8"))
+                resp = _call()
+                self._capture_rate_limit(resp.headers)
+                return json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as e:
+                self._capture_rate_limit(e.headers)
                 if e.code >= 500 and attempt < RETRY_5XX - 1:
                     time.sleep(2 ** attempt)
                     continue

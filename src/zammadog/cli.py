@@ -7,20 +7,40 @@ import os
 import sys
 from dataclasses import asdict
 
-from .client import DatadogClient, DatadogError
+from .client import DatadogClient, DatadogError, RateLimit
 from .evidence import gather_evidence
 from .links import extract_datadog_links
 from .render import render_aggregate, render_endpoint_report, render_endpoint_report_ai, render_endpoint_report_html, render_logs_table, render_spans_table, render_trace_stats, render_trace_summary
 
 VERSION = "0.1.0"
 
+_CLIENT: DatadogClient | None = None
+
 
 def _client() -> DatadogClient:
+    global _CLIENT
+    if _CLIENT is not None:
+        return _CLIENT
     try:
-        return DatadogClient.from_env()
+        _CLIENT = DatadogClient.from_env()
+        return _CLIENT
     except DatadogError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def _print_rate_limit(rl: RateLimit | None, force: bool) -> None:
+    if rl is None or rl.limit == 0:
+        return
+    low = rl.pct_remaining < 0.10
+    if not (force or low):
+        return
+    tag = "WARN" if low else "rate"
+    period = f"/{rl.period_s}s" if rl.period_s else ""
+    print(
+        f"[{tag}: {rl.remaining}/{rl.limit}{period}, reset {rl.reset_s}s]",
+        file=sys.stderr,
+    )
 
 
 def _dump(obj: list, use_json: bool, render_fn) -> None:
@@ -187,6 +207,11 @@ def main(argv: list[str] | None = None) -> None:
         description="Token-friendly Datadog Logs/APM CLI.",
     )
     parser.add_argument("--version", action="version", version=f"zammadog {VERSION}")
+    parser.add_argument(
+        "--show-limit",
+        action="store_true",
+        help="Print Datadog rate-limit headers to stderr after request",
+    )
 
     sub = parser.add_subparsers(dest="resource")
 
@@ -259,8 +284,10 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         rc = args.func(args)
+        _print_rate_limit(_CLIENT.last_rate_limit if _CLIENT else None, args.show_limit)
         sys.exit(rc)
     except DatadogError as e:
+        _print_rate_limit(_CLIENT.last_rate_limit if _CLIENT else None, args.show_limit)
         print(f"Error: {e}", file=sys.stderr)
         if e.body:
             print(f"Response: {e.body[:500]}", file=sys.stderr)
