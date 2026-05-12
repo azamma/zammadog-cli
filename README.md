@@ -86,8 +86,24 @@ zammadog apm endpoint-report "POST /my-svc/v1/foo" --service my-svc --from now-2
 | `--service` | none | `endpoint-report` — filter by service name |
 | `--sample N` | `5` | `endpoint-report` — traces to sample |
 | `--endpoints` | none | `endpoint-report` — multiple resources in one run |
+| `--show-limit` | off | Global — print Datadog rate-limit headers to stderr after request. Auto-prints `[WARN]` when remaining < 10% even without the flag. |
 
 `endpoint-report` flags `--html`, `--ai`, and `--json` are mutually exclusive.
+
+### Rate limit visibility
+
+```
+$ zammadog --show-limit logs search -q "service:ms-foo" --from now-5m --limit 3
+[rate: 299/300/60s, reset 15s]
+TS                      SVC      ...
+```
+
+Format: `[rate: remaining/limit/period, reset Ns]`. Read from `X-RateLimit-*`
+response headers. Datadog rate limits are per-org, not per-key — see
+[Datadog rate limits](https://docs.datadoghq.com/api/latest/rate-limits/).
+
+Python: `client.last_rate_limit` exposes a `RateLimit` dataclass
+(`limit`, `remaining`, `reset_s`, `period_s`, `.pct_remaining`).
 
 ## Output
 
