@@ -213,20 +213,28 @@ def main(argv: list[str] | None = None) -> None:
         help="Print Datadog rate-limit headers to stderr after request",
     )
 
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--show-limit",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Print Datadog rate-limit headers to stderr after request",
+    )
+
     sub = parser.add_subparsers(dest="resource")
 
     # --- logs ---
     logs_p = sub.add_parser("logs")
     logs_sub = logs_p.add_subparsers(dest="action")
 
-    ls_p = logs_sub.add_parser("search")
+    ls_p = logs_sub.add_parser("search", parents=[common])
     ls_p.add_argument("--query", "-q", required=True)
     ls_p.add_argument("--limit", type=int, default=25)
     _add_time_args(ls_p)
     _add_json(ls_p)
     ls_p.set_defaults(func=cmd_logs_search)
 
-    la_p = logs_sub.add_parser("aggregate")
+    la_p = logs_sub.add_parser("aggregate", parents=[common])
     la_p.add_argument("--query", "-q", required=True)
     la_p.add_argument("--group-by", required=True)
     la_p.add_argument("--compute", default="count")
@@ -238,21 +246,21 @@ def main(argv: list[str] | None = None) -> None:
     apm_p = sub.add_parser("apm")
     apm_sub = apm_p.add_subparsers(dest="action")
 
-    as_p = apm_sub.add_parser("search")
+    as_p = apm_sub.add_parser("search", parents=[common])
     as_p.add_argument("--query", "-q", required=True)
     as_p.add_argument("--limit", type=int, default=25)
     _add_time_args(as_p)
     _add_json(as_p)
     as_p.set_defaults(func=cmd_apm_search)
 
-    at_p = apm_sub.add_parser("trace", help="Fetch all spans for a trace ID and show grouped summary")
+    at_p = apm_sub.add_parser("trace", parents=[common], help="Fetch all spans for a trace ID and show grouped summary")
     at_p.add_argument("trace_id", metavar="TRACE_ID")
     at_p.add_argument("--stats", action="store_true", help="Show min/max/avg duration per group")
     _add_time_args(at_p)
     _add_json(at_p)
     at_p.set_defaults(func=cmd_apm_trace)
 
-    aer_p = apm_sub.add_parser("endpoint-report", help="Sample recent traces for an endpoint and show internal call stats")
+    aer_p = apm_sub.add_parser("endpoint-report", parents=[common], help="Sample recent traces for an endpoint and show internal call stats")
     aer_p.add_argument("endpoint", nargs="?", default=None, metavar="RESOURCE")
     aer_p.add_argument("--endpoints", nargs="+", metavar="RESOURCE", help="Multiple endpoints (alternative to positional)")
     aer_p.add_argument("--service", "-s", default=None, help="Filter by service name")
@@ -264,7 +272,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_json(aer_p)
     aer_p.set_defaults(func=cmd_apm_endpoint_report)
 
-    aa_p = apm_sub.add_parser("aggregate")
+    aa_p = apm_sub.add_parser("aggregate", parents=[common])
     aa_p.add_argument("--query", "-q", required=True)
     aa_p.add_argument("--group-by", required=True)
     aa_p.add_argument("--compute", default="count")
@@ -273,7 +281,7 @@ def main(argv: list[str] | None = None) -> None:
     aa_p.set_defaults(func=cmd_apm_aggregate)
 
     # --- from-url ---
-    fu_p = sub.add_parser("from-url")
+    fu_p = sub.add_parser("from-url", parents=[common])
     fu_p.add_argument("url")
     fu_p.set_defaults(func=cmd_from_url)
 
