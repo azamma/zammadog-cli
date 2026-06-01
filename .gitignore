@@ -42,3 +42,13 @@ Thumbs.db
 
 # Claude Code local
 .claude/settings.local.json
+
+# Local (per-user) business log parsers — only the mechanism + example are committed.
+# Drop your own <name>_parser.py into src/zammadog/parsers/; it stays local.
+src/zammadog/parsers/*
+!src/zammadog/parsers/__init__.py
+!src/zammadog/parsers/example_parser.py
+tests/test_parsers.py
+
+# Skill-creator eval workspaces (contain local eval queries / run logs)
+skills/*-workspace/

@@ -6,7 +6,10 @@
 
 Token-friendly Datadog Logs/APM CLI for AI agents and humans.
 
-Fetches logs and spans, compacts them aggressively (~150 B per event), and outputs column-aligned tables. Stdlib only — no third-party runtime deps.
+Fetches logs and spans, compacts them aggressively (~150 B per event), and outputs column-aligned tables.
+
+**Datadog**: stdlib-only HTTP client.  
+**CloudWatch**: requires `boto3>=1.34` (reads AWS default credential/region chain).
 
 ## Claude Code skill
 
@@ -68,6 +71,44 @@ zammadog apm endpoint-report "POST /my-svc/v1/foo" --service my-svc --from now-2
 zammadog apm endpoint-report "POST /my-svc/v1/foo" --service my-svc --from now-24h --sample 10 --html --out report.html
 zammadog apm endpoint-report "POST /my-svc/v1/foo" --service my-svc --from now-24h --sample 10 --ai
 ```
+
+### CloudWatch
+
+Uses the boto3 default credential and region chain (`aws configure`, `AWS_REGION`, `AWS_PROFILE`, etc.). No `--profile`/`--region` flags in the MVP — if the region is unresolved, zammadog exits with a clear error.
+
+The same 24 h window cap applies to `cw` commands.
+
+```bash
+# Discover log groups — case-sensitive name substring filter (start here if unsure of the name)
+zammadog cw log-groups -p subscription --limit 20
+
+# Logs Insights — search with a query string (supports @message and stats queries)
+zammadog cw logs-search -q 'fields @timestamp,@message | filter @message like /ERROR/' -g /aws/lambda/my-fn --from now-1h
+
+# Logs Insights — stats aggregation returns an aggregate table
+zammadog cw logs-search -q 'stats count(*) by level' -g /aws/lambda/my-fn --from now-1h
+
+# Filter log events — single log group, CloudWatch filter pattern
+zammadog cw logs-filter -g /aws/lambda/my-fn -p ERROR --from now-30m
+
+# Trace a request across many services in one Insights query (origin → downstream, time-ordered)
+# Output: `ts | log-group | message`. Returns the full trace (default 300 lines, up to 1000) —
+# not capped at 50 like search. Insights caps at 50 *groups* — always pass a -G pattern to scope.
+zammadog cw trace 6a1cd48a0000000039bfb5f88fa476e9 -G my-service --from now-2h
+# Jump to the failure in a long trace:
+zammadog cw trace <id> -G my-service --from now-15m | grep -iE "error|exception"
+
+# Grep a single group for a trace id (quote the term for a substring match)
+zammadog cw logs-filter -g /aws/ecs/my-service -p '"<trace_id>"' --from now-2h
+
+# Metrics — fetch datapoints for a metric with optional dimensions
+zammadog cw metrics -n AWS/Lambda -m Errors -d FunctionName=my-fn --stat Sum --period 300 --from now-3h
+```
+
+> Optional: `cw logs-*`/`cw trace` accept `--parser <name>` to pass output through a parser that
+> compacts verbose framework logs. The committed `example` parser is a template — copy
+> `src/zammadog/parsers/example_parser.py` to `<name>_parser.py` in that folder and
+> `register("<name>", MyParser())`. New parser modules there are auto-loaded and git-ignored.
 
 ### Flags
 

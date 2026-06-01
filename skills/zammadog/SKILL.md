@@ -1,18 +1,22 @@
 ---
 name: zammadog
 description: >
-  Use zammadog to query Datadog Logs and APM from the CLI or Python. Invoke this skill
-  whenever the user wants to investigate production incidents, query Datadog logs or
-  traces, parse Datadog URLs from specs/tickets, or fetch evidence from Datadog for
-  debugging — even if they just paste a Datadog link and ask "what's happening here?"
-  Also trigger when the user asks to "grep Datadog", "check the logs in DD", or "look
-  at the APM traces" without specifying a tool.
+  Token-friendly CLI/library to query observability backends — Datadog Logs & APM AND
+  AWS CloudWatch Logs/Metrics — for production debugging. Use this skill whenever the user
+  investigates a production incident, wants logs/errors/traces from a service or microservice,
+  or pastes a Datadog link and asks "what's happening here?" — even if they don't name a tool.
+  Trigger for Datadog phrasing ("grep Datadog", "check the logs in DD", "look at the APM traces")
+  AND for CloudWatch/AWS phrasing: "errors in <service> in prod", "logs de <service> en producción",
+  "buscá/ver los logs de <service>", "trace this request across services", "tracear este trace id",
+  "grep CloudWatch", "what log group has X", "follow this trace through the microservices". When the
+  user wants a service's logs or to trace a request across services, reach for this skill before
+  falling back to raw aws/curl commands.
 ---
 
 # zammadog
 
-`zammadog` is the token-friendly Datadog CLI/library built into this repo. It fetches
-logs and APM spans, compacts them aggressively (~150 B per event), and outputs
+`zammadog` is the token-friendly Datadog/CloudWatch CLI/library built into this repo. It fetches
+logs and APM spans from Datadog, and logs/metrics from AWS CloudWatch, compacts them aggressively (~150 B per event), and outputs
 column-aligned tables that are easy to read or pipe into further analysis.
 
 ## When to reach for it
@@ -23,6 +27,7 @@ column-aligned tables that are easy to read or pipe into further analysis.
 - User wants slow traces or a specific trace → `zammadog apm trace <id>` / `from-url`
 - User wants N+1 queries, repeated calls, or timing breakdown of a trace → `zammadog apm trace <id> --stats`
 - User wants to analyze what a specific endpoint calls internally (across multiple traces) → `zammadog apm endpoint-report <resource> --service <svc>`
+- User wants CloudWatch logs or metrics (AWS-only environments) → `zammadog cw logs-search`, `zammadog cw logs-filter`, `zammadog cw metrics`. Don't know the log group name? → `zammadog cw log-groups -p <substring>` first.
 - Orchestrator pre-fetches evidence: see `src/zammadog/evidence.py:gather_evidence()`
 
 ## Auth
@@ -39,6 +44,15 @@ If keys are missing, `zammadog` exits 1 with a clear message. Check with:
 
 ```bash
 zammadog --version   # confirms install; no auth needed
+```
+
+### CloudWatch auth
+
+CloudWatch uses the boto3 default credential + region chain (`aws configure`, `AWS_REGION`, `AWS_PROFILE`, etc.). If the region is unresolved, zammadog exits with a clear error — do not retry, surface the error to the user.
+
+```bash
+export AWS_REGION=us-east-1
+# or rely on ~/.aws/config default profile
 ```
 
 ## CLI quick reference
@@ -129,6 +143,58 @@ Output columns: `CALLS/TR` (avg calls per trace), `TOTAL`, `SVC`, `OP`, `RESOURC
 zammadog apm aggregate --query "service:ms-foo" --group-by "service,resource" --from now-1h
 ```
 
+### CloudWatch
+
+**Discover the log group** when you don't know the exact name (case-sensitive substring):
+
+```bash
+zammadog cw log-groups -p my-service          # confirm the exact name
+zammadog cw log-groups -p my-service --limit 50
+```
+
+**Filter a single group** (simple substring/pattern match). To grep a **trace id** the term must
+be quoted — CloudWatch treats `"..."` as a substring match; unquoted it tokenises and misses:
+
+```bash
+zammadog cw logs-filter -g /aws/ecs/my-service -p ERROR --from now-1h
+zammadog cw logs-filter -g /aws/ecs/my-service -p '"6a1ccbe6...trace..."' --from now-2h
+```
+
+**Trace a request across all services** — the most powerful command. One Insights query over many
+groups at once, time-ordered, so the **first line is the origin service** and you can read the call
+chain (cross-service HTTP hops show inline). You don't need to know the group names:
+
+```bash
+zammadog cw trace <trace_id> -G <group-substring> --from now-2h
+# Output: `ts | log-group | message`, sorted ascending. Returns the FULL trace (default 300
+# lines, up to 1000) — unlike the 50-row search cap, a trace is one ordered stream so it
+# isn't truncated; the failing line is often deep in a long flow. Cap: 50 *groups* per query
+# (Insights limit) — always pass -G to scope, or it grabs the first 50 arbitrarily.
+```
+
+If a `cw trace` looks suspiciously short or stops before the error, the trace id likely aged out of
+the window (CloudWatch times are UTC and traces recur fast with new ids) — grab a fresh id and widen
+`--from`. To zoom into one service's slice of a trace, `cw logs-filter -g <group> -p '"<trace_id>"'`.
+
+**Logs Insights** — full query language (filter + stats). A `stats` query returns an aggregate table:
+
+```bash
+zammadog cw logs-search -q 'fields @timestamp,@message | filter @message like /ERROR/' -g /aws/ecs/my-service --from now-1h
+zammadog cw logs-search -q 'stats count(*) by level' -g /aws/ecs/my-service --from now-1h
+```
+
+**Metrics**:
+
+```bash
+zammadog cw metrics -n AWS/Lambda -m Errors -d FunctionName=my-fn --stat Sum --period 300 --from now-3h
+```
+
+**`--parser <name>` (optional, local).** CloudWatch log output can be passed through a parser that
+compacts verbose framework lines (e.g. strip MDC/trace prefixes, collapse logger FQCNs) into a lean
+`ts | trace_id | msg`. The only committed parser is `example` (a template). To add your own, copy
+`src/zammadog/parsers/example_parser.py` to `<name>_parser.py` in that folder, implement
+`parse(rows) -> rows`, and call `register("<name>", MyParser())` — it is auto-loaded and git-ignored.
+
 ### Flags
 
 | Flag | Default | Meaning |
@@ -146,6 +212,12 @@ zammadog apm aggregate --query "service:ms-foo" --group-by "service,resource" --
 | `--html` | off | `apm endpoint-report` — self-contained sortable HTML report |
 | `--ai` | off | `apm endpoint-report` — compact markdown to `~/.claude/tmp/`, prints path |
 | `--out PATH` | stdout | `apm endpoint-report` — write to file instead of stdout |
+| `-g/--log-group` | required | `cw logs-search` (repeatable) / `cw logs-filter` (single) — log group name |
+| `-p/--pattern` | — | `cw log-groups` name substring / `cw logs-filter` filter pattern (quote `"<trace>"` for substring) |
+| `-G/--groups-pattern` | first 50 | `cw trace` — substring to scope which groups to search |
+| `--parser` | none | `cw` logs/trace — optional local business log parser (see parsers/example_parser.py) |
+| `-n/-m/-d` | — | `cw metrics` — namespace / metric-name / dimension `K=V` (repeatable) |
+| `--stat`,`--period` | `Average`,`300` | `cw metrics` — statistic and granularity (seconds) |
 
 ## Output format
 
@@ -204,7 +276,8 @@ zammadog logs search --query "trace_id:<id>" --from now-1h --limit 10
 
 | Limit | Value |
 |-------|-------|
-| Max rows per search | 50 |
+| Max rows per search | 50 (`cw trace` exempt: up to 1000 — full ordered trace) |
+| Max log groups per `cw trace` query | 50 (Insights limit; scope with `-G`) |
 | Max time window | 24 h |
 | HTTP timeout | 15 s |
 | 5xx retries | 2 attempts, exponential backoff |
@@ -243,6 +316,27 @@ Requests that exceed the window limit raise `DatadogError` immediately — narro
    zammadog from-url "<url-from-jira-or-slack>"
    ```
 
+### CloudWatch workflow (AWS-only environments)
+
+1. **Resolve the log group** from the service name:
+   ```bash
+   zammadog cw log-groups -p my-service
+   ```
+2. **See recent errors** in that service:
+   ```bash
+   zammadog cw logs-filter -g /aws/ecs/my-service -p ERROR --from now-1h
+   ```
+3. **Trace one request across all services** — origin first, full call chain:
+   ```bash
+   zammadog cw trace <trace_id> -G <group-substring> --from now-2h
+   ```
+   The first line is the entry-point service; cross-service HTTP hops mark the call chain and their
+   latency, so the slowest call jumps out. The full trace is returned (not capped at 50), so the
+   failing line deep in a long flow is included — pipe through `grep` to jump to it:
+   ```bash
+   zammadog cw trace <id> -G <group-substring> --from now-15m | grep -iE "error|exception"
+   ```
+
 ## Install
 
 ```bash
@@ -255,4 +349,4 @@ pip install -e /path/to/zammadog-cli
 uv pip install /path/to/zammadog-cli
 ```
 
-No runtime dependencies — stdlib only.
+Datadog client is stdlib-only. CloudWatch support requires `boto3>=1.34`.

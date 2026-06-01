@@ -6,7 +6,9 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "Installing zammadog from $REPO_DIR..."
 
 if command -v uv &>/dev/null; then
-    uv pip install -e "$REPO_DIR"
+    # Install as an isolated uv tool so the `zammadog` command and its deps
+    # (boto3, ...) live together. --force reinstalls/updates an existing tool.
+    UV_LINK_MODE=copy uv tool install --force --editable "$REPO_DIR"
 elif command -v pip &>/dev/null; then
     pip install -e "$REPO_DIR"
 elif command -v pip3 &>/dev/null; then

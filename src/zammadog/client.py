@@ -79,6 +79,8 @@ class DatadogClient:
     last_rate_limit: RateLimit | None = field(default=None)
 
     def _capture_rate_limit(self, headers) -> None:
+        if headers is None:
+            return
         def _int(name: str) -> int:
             v = headers.get(name) or headers.get(name.lower())
             try:

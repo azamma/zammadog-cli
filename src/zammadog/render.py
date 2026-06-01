@@ -4,7 +4,7 @@ import html as _html
 import json
 from collections import Counter
 from datetime import datetime, timezone
-from .compact import AggregateRow, CompactLog, CompactSpan
+from .compact import AggregateRow, CompactLog, CompactLogGroup, CompactMetric, CompactSpan
 
 _COL_SEP = "  "
 
@@ -728,4 +728,40 @@ def render_aggregate(rows: list[AggregateRow]) -> str:
         parts = [f"{r.groups.get(k, '-'):<{col_widths[k]}}" for k in keys]
         parts.append(f"{r.value:.0f}")
         lines.append(_COL_SEP.join(parts))
+    return "\n".join(lines)
+
+
+def render_metrics(rows: list[CompactMetric]) -> str:
+    if not rows:
+        return "(no results)"
+    header = f"{'TS':<22}{_COL_SEP}{'LABEL':<24}{_COL_SEP}VALUE"
+    lines = [header, "-" * len(header)]
+    for r in rows:
+        lines.append(
+            f"{_truncate(r.ts, 22):<22}{_COL_SEP}"
+            f"{_truncate(r.label, 24):<24}{_COL_SEP}"
+            f"{r.value:g}"
+        )
+    return "\n".join(lines)
+
+
+def render_cw_trace(rows: list[CompactLog]) -> str:
+    """Cross-group trace render: ``ts | group | msg`` (group = origin service)."""
+    if not rows:
+        return "(no results)"
+    return "\n".join(f"{r.ts or '-'} | {r.svc or '-'} | {r.msg}" for r in rows)
+
+
+def render_log_groups(rows: list[CompactLogGroup]) -> str:
+    if not rows:
+        return "(no results)"
+    header = f"{'NAME':<60}{_COL_SEP}{'STORED_MB':<10}{_COL_SEP}RETENTION"
+    lines = [header, "-" * len(header)]
+    for r in rows:
+        retention = f"{r.retention_days}d" if r.retention_days else "never"
+        lines.append(
+            f"{_truncate(r.name, 60):<60}{_COL_SEP}"
+            f"{r.stored_mb:<10g}{_COL_SEP}"
+            f"{retention}"
+        )
     return "\n".join(lines)

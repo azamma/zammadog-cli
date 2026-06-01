@@ -1,5 +1,5 @@
 """Tests for compact dataclass conversion."""
-from zammadog.compact import compact_log, compact_span, CompactLog, CompactSpan, MSG_MAX
+from zammadog.compact import compact_cw_log, compact_log, compact_span, CompactLog, CompactSpan, MSG_MAX
 
 
 def _raw_log(**kwargs):
@@ -76,3 +76,59 @@ def test_compact_span_missing():
     assert span.duration_ms is None
     assert span.trace_id is None
     assert span.error_type is None
+
+
+def _raw_cw_insights_row(**kwargs):
+    base = {
+        "@timestamp": "2026-05-05T12:00:00.000Z",
+        "@message": "Something went wrong",
+        "@logStream": "my-stream",
+        "level": "error",
+        "trace_id": "abc123",
+    }
+    base.update(kwargs)
+    return base
+
+
+def _raw_cw_filter_event(**kwargs):
+    base = {
+        "timestamp": 1714908000000,
+        "message": "Filtered event",
+        "logStreamName": "my-stream",
+    }
+    base.update(kwargs)
+    return base
+
+
+def test_compact_cw_log_insights_string_ts():
+    log = compact_cw_log(_raw_cw_insights_row())
+    assert log.ts == "2026-05-05T12:00:00.000Z"
+    assert log.svc == "my-stream"
+    assert log.status == "error"
+    assert log.msg == "Something went wrong"
+    assert log.trace_id == "abc123"
+    assert log.error_kind is None
+
+
+def test_compact_cw_log_filter_int_ts():
+    log = compact_cw_log(_raw_cw_filter_event())
+    assert log.ts == "2024-05-05T11:20:00Z"
+    assert log.svc == "my-stream"
+    assert log.msg == "Filtered event"
+
+
+def test_compact_cw_log_message_truncated():
+    long_msg = "x" * 500
+    log = compact_cw_log(_raw_cw_insights_row(**{"@message": long_msg}))
+    assert len(log.msg) == MSG_MAX + 1
+    assert log.msg.endswith("…")
+
+
+def test_compact_cw_log_missing_fields():
+    log = compact_cw_log({})
+    assert log.ts == ""
+    assert log.svc is None
+    assert log.status is None
+    assert log.msg == ""
+    assert log.trace_id is None
+    assert log.error_kind is None

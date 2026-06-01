@@ -1,6 +1,7 @@
 """Compact dataclass representations — strips raw event bloat."""
 from __future__ import annotations
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 MSG_MAX = 400
 
@@ -31,6 +32,20 @@ class CompactSpan:
 class AggregateRow:
     groups: dict[str, str]
     value: float
+
+
+@dataclass(frozen=True)
+class CompactMetric:
+    ts: str       # ISO8601 datapoint time
+    label: str    # metric label (truncated)
+    value: float
+
+
+@dataclass(frozen=True)
+class CompactLogGroup:
+    name: str               # log group name
+    stored_mb: float        # stored bytes converted to MB
+    retention_days: int | None  # retention in days, None = never expire
 
 
 def _parse_tags(tags) -> dict[str, str]:
@@ -86,4 +101,44 @@ def compact_span(raw: dict) -> CompactSpan:
         status=str(attrs.get("status", "")) or None,
         trace_id=trace_id,
         error_type=error_type,
+    )
+
+
+def compact_cw_log(row: dict) -> CompactLog:
+    """Map a CloudWatch Insights row or filter_log_events event to a CompactLog.
+
+    Args:
+        row: A dict from Insights results (field:value pairs) or a
+            filter_log_events event dict.
+
+    Returns:
+        CompactLog with best-effort field extraction.
+    """
+    # Insights returns fields as a list of {field,value} — already flattened by
+    # CloudWatchClient before calling us. filter_log_events returns nested dicts.
+    msg = str(row.get("@message") or row.get("message") or "")
+    if len(msg) > MSG_MAX:
+        msg = msg[:MSG_MAX] + "…"
+
+    raw_ts = row.get("@timestamp") or row.get("timestamp")
+    if raw_ts is None:
+        ts = ""
+    elif isinstance(raw_ts, int):
+        ts = datetime.fromtimestamp(raw_ts / 1000, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    else:
+        ts = str(raw_ts)
+
+    # Insights @log is "<account-id>:<log-group-name>" — keep just the group name,
+    # which is the most useful "service" label when searching across groups.
+    log_group = row.get("@log")
+    if log_group and ":" in log_group:
+        log_group = log_group.split(":", 1)[1]
+
+    return CompactLog(
+        ts=ts,
+        svc=row.get("service") or log_group or row.get("@logStream") or row.get("logStreamName"),
+        status=row.get("level") or row.get("status"),
+        msg=msg,
+        trace_id=row.get("trace_id"),
+        error_kind=None,
     )
