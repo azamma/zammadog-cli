@@ -5,11 +5,109 @@ import json
 from collections import Counter
 from datetime import datetime, timezone
 from .compact import AggregateRow, CompactLog, CompactLogGroup, CompactMetric, CompactSpan
+from .report import ReportModel
 
 _COL_SEP = "  "
 
 _HTTP_OPS = {"servlet.request", "okhttp.request", "spring.handler"}
 _DB_OPS = {"mysql.query", "redis.query", "repository.operation", "database.connection", "resilience4j"}
+
+# Shared CSS for the HTML reports. Kept as a module-level constant with single
+# braces (not double-escaped for an f-string) so the report renderer can drop it
+# in via f-string interpolation. Byte-identical between the two reports.
+_REPORT_CSS = """
+:root {
+  --bg: #0f1117; --bg2: #1a1d27; --bg3: #252836;
+  --border: #2e3149; --text: #e2e8f0; --muted: #6b7280;
+  --red: #ef4444; --amber: #f59e0b; --green: #22c55e; --blue: #3b82f6;
+  --accent: #818cf8;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc; --bg2: #ffffff; --bg3: #f1f5f9;
+    --border: #e2e8f0; --text: #1e293b; --muted: #64748b;
+  }
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: ui-sans-serif,system-ui,-apple-system,sans-serif; font-size: 14px; line-height: 1.5; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* header */
+.header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.header h1 { font-size: 18px; font-weight: 700; flex: 1; min-width: 200px; word-break: break-all; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+.badge-red { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.3); }
+.badge-amber { background: rgba(245,158,11,.15); color: var(--amber); border: 1px solid rgba(245,158,11,.3); }
+.badge-ok { background: rgba(34,197,94,.15); color: var(--green); border: 1px solid rgba(34,197,94,.3); }
+.badge-blue { background: rgba(59,130,246,.15); color: var(--blue); border: 1px solid rgba(59,130,246,.3); }
+.meta { color: var(--muted); font-size: 12px; }
+
+/* layout */
+.main { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+/* KPI cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 12px; margin-bottom: 24px; }
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.card-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 6px; }
+.card-value { font-size: 20px; font-weight: 700; }
+
+/* section titles */
+.section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 8px; margin-top: 24px; }
+
+/* filter bar */
+.filter-bar { display: flex; gap: 8px; margin-bottom: 8px; }
+.filter-bar input { flex: 1; background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+.filter-bar input:focus { outline: 2px solid var(--accent); }
+.filter-bar button { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+.filter-bar button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* group header row */
+.group-hdr td { background: var(--bg3); padding: 8px 10px; font-size: 12px; cursor: pointer; border-top: 2px solid var(--border); user-select: none; }
+.group-hdr:hover td { background: var(--bg2); }
+
+/* table */
+.tbl-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th { background: var(--bg3); padding: 8px 10px; text-align: left; font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; border-bottom: 1px solid var(--border); }
+thead th:hover { color: var(--accent); }
+thead th::after { content: " "; }
+thead th.asc::after { content: " ↑"; }
+thead th.desc::after { content: " ↓"; }
+tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: var(--bg3); }
+tbody td { padding: 7px 10px; white-space: nowrap; }
+.row-n1 { background: rgba(239,68,68,.06); }
+.row-slow { background: rgba(245,158,11,.06); }
+
+/* pagination */
+.pagination { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+.pagination button { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.pagination button:disabled { opacity: .4; cursor: default; }
+.pagination .page-info { color: var(--muted); font-size: 12px; }
+
+/* charts */
+.charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 16px; margin-bottom: 8px; }
+.chart-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.chart-card h3 { font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+canvas { max-width: 100%; }
+
+/* details/summary */
+details { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+details summary { padding: 12px 16px; cursor: pointer; font-weight: 600; user-select: none; }
+details summary:hover { background: var(--bg3); }
+details[open] summary { border-bottom: 1px solid var(--border); }
+.raw-wrap { padding: 12px 16px; }
+
+/* footer */
+footer { text-align: center; color: var(--muted); font-size: 11px; padding: 24px; border-top: 1px solid var(--border); margin-top: 24px; }
+
+@media print {
+  .filter-bar, .pagination { display: none; }
+  details { display: block; }
+}
+"""
 
 
 def _classify_op(op: str) -> str:
@@ -280,97 +378,7 @@ def render_endpoint_report_html(
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Endpoint Report: {e(endpoint)}</title>
 <style>
-:root {{
-  --bg: #0f1117; --bg2: #1a1d27; --bg3: #252836;
-  --border: #2e3149; --text: #e2e8f0; --muted: #6b7280;
-  --red: #ef4444; --amber: #f59e0b; --green: #22c55e; --blue: #3b82f6;
-  --accent: #818cf8;
-}}
-@media (prefers-color-scheme: light) {{
-  :root {{
-    --bg: #f8fafc; --bg2: #ffffff; --bg3: #f1f5f9;
-    --border: #e2e8f0; --text: #1e293b; --muted: #64748b;
-  }}
-}}
-*, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-body {{ background: var(--bg); color: var(--text); font-family: ui-sans-serif,system-ui,-apple-system,sans-serif; font-size: 14px; line-height: 1.5; }}
-a {{ color: var(--accent); text-decoration: none; }}
-a:hover {{ text-decoration: underline; }}
-
-/* header */
-.header {{ background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }}
-.header h1 {{ font-size: 18px; font-weight: 700; flex: 1; min-width: 200px; word-break: break-all; }}
-.badge {{ display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 9999px; font-size: 12px; font-weight: 600; }}
-.badge-red {{ background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.3); }}
-.badge-amber {{ background: rgba(245,158,11,.15); color: var(--amber); border: 1px solid rgba(245,158,11,.3); }}
-.badge-ok {{ background: rgba(34,197,94,.15); color: var(--green); border: 1px solid rgba(34,197,94,.3); }}
-.badge-blue {{ background: rgba(59,130,246,.15); color: var(--blue); border: 1px solid rgba(59,130,246,.3); }}
-.meta {{ color: var(--muted); font-size: 12px; }}
-
-/* layout */
-.main {{ max-width: 1400px; margin: 0 auto; padding: 24px; }}
-
-/* KPI cards */
-.cards {{ display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 12px; margin-bottom: 24px; }}
-.card {{ background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }}
-.card-label {{ font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 6px; }}
-.card-value {{ font-size: 20px; font-weight: 700; }}
-
-/* section titles */
-.section-title {{ font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 8px; margin-top: 24px; }}
-
-/* filter bar */
-.filter-bar {{ display: flex; gap: 8px; margin-bottom: 8px; }}
-.filter-bar input {{ flex: 1; background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 13px; }}
-.filter-bar input:focus {{ outline: 2px solid var(--accent); }}
-.filter-bar button {{ background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; white-space: nowrap; }}
-.filter-bar button:hover {{ border-color: var(--accent); color: var(--accent); }}
-
-/* group header row */
-.group-hdr td {{ background: var(--bg3); padding: 8px 10px; font-size: 12px; cursor: pointer; border-top: 2px solid var(--border); user-select: none; }}
-.group-hdr:hover td {{ background: var(--bg2); }}
-
-/* table */
-.tbl-wrap {{ overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }}
-table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-thead th {{ background: var(--bg3); padding: 8px 10px; text-align: left; font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; border-bottom: 1px solid var(--border); }}
-thead th:hover {{ color: var(--accent); }}
-thead th::after {{ content: " "; }}
-thead th.asc::after {{ content: " ↑"; }}
-thead th.desc::after {{ content: " ↓"; }}
-tbody tr {{ border-bottom: 1px solid var(--border); transition: background .1s; }}
-tbody tr:last-child {{ border-bottom: none; }}
-tbody tr:hover {{ background: var(--bg3); }}
-tbody td {{ padding: 7px 10px; white-space: nowrap; }}
-.row-n1 {{ background: rgba(239,68,68,.06); }}
-.row-slow {{ background: rgba(245,158,11,.06); }}
-
-/* pagination */
-.pagination {{ display: flex; gap: 8px; margin-top: 8px; align-items: center; }}
-.pagination button {{ background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }}
-.pagination button:disabled {{ opacity: .4; cursor: default; }}
-.pagination .page-info {{ color: var(--muted); font-size: 12px; }}
-
-/* charts */
-.charts-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 16px; margin-bottom: 8px; }}
-.chart-card {{ background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }}
-.chart-card h3 {{ font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }}
-canvas {{ max-width: 100%; }}
-
-/* details/summary */
-details {{ background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }}
-details summary {{ padding: 12px 16px; cursor: pointer; font-weight: 600; user-select: none; }}
-details summary:hover {{ background: var(--bg3); }}
-details[open] summary {{ border-bottom: 1px solid var(--border); }}
-.raw-wrap {{ padding: 12px 16px; }}
-
-/* footer */
-footer {{ text-align: center; color: var(--muted); font-size: 11px; padding: 24px; border-top: 1px solid var(--border); margin-top: 24px; }}
-
-@media print {{
-  .filter-bar, .pagination {{ display: none; }}
-  details {{ display: block; }}
-}}
+{_REPORT_CSS}
 </style>
 </head>
 <body>
@@ -707,6 +715,235 @@ renderTable('raw');
 drawLatencyChart();
 drawCptChart();
 drawSvcChart();
+</script>
+</body>
+</html>"""
+
+
+def render_report_html(
+    model: ReportModel,
+    *,
+    source: str,
+    time_range: tuple[str, str],
+    generated_at: str,
+    version: str,
+) -> str:
+    """Render a parser-driven report to self-contained HTML.
+
+    Args:
+        model: The ReportModel produced by a parser (or the generic fallback).
+        source: Header subtitle — typically log group(s) or "query" + groups.
+        time_range: (from_ts, to_ts) labels for the header meta.
+        generated_at: ISO timestamp string shown in the header.
+        version: Tool version string shown in the footer.
+
+    The CSS, badge classes, sort/filter/paginate JS, and chart renderer are
+    shared with the endpoint report (``render_endpoint_report_html``) via
+    ``_REPORT_CSS`` and the inline engine; only the data model differs.
+    """
+    e = _html.escape
+    from_ts, to_ts = time_range
+    title = e(model.title)
+
+    # Sanitize JSON for embedding inside <script>: "</" is the breakout vector
+    # (an attacker-controlled CW log could contain "</script>"). The standard
+    # defence is to backslash-escape the forward slash. The HTMLParser reads
+    # it as the same JSON.
+    def _embed(obj) -> str:
+        raw = json.dumps(obj, ensure_ascii=False)
+        return raw.replace("</", "<\\/")
+
+    # Render KPIs
+    kpi_cards = "\n".join(
+        f'  <div class="card">\n'
+        f'    <div class="card-label">{e(k.label)}</div>\n'
+        f'    <div class="card-value">'
+        f'<span class="badge badge-{k.tone}">{e(k.value)}</span>'
+        f'</div>\n'
+        f'  </div>'
+        for k in model.kpis
+    )
+
+    # Render charts
+    chart_blocks: list[str] = []
+    for i, c in enumerate(model.charts):
+        chart_blocks.append(
+            f'<div class="chart-card">\n'
+            f'  <h3>{e(c.title)}</h3>\n'
+            f'  <div id="chart-r-{i}"></div>\n'
+            f'</div>'
+        )
+    charts_html = "\n".join(chart_blocks)
+    chart_data = [{"title": c.title, "bars": [[label, float(v)] for label, v in c.bars]} for c in model.charts]
+
+    # Render sections (one table each)
+    section_blocks: list[str] = []
+    section_data: list[dict] = []
+    for i, s in enumerate(model.sections):
+        rows_json = [[("" if v is None else v) for v in row] for row in s.rows]
+        section_data.append({"name": f"sec{i}", "columns": list(s.columns), "rows": rows_json})
+        ths = "\n".join(
+            f'        <th onclick="sortR(\'sec{i}\',{j})">{e(col)}</th>'
+            for j, col in enumerate(s.columns)
+        )
+        section_blocks.append(
+            f'<div class="section-title">{e(s.title)}</div>\n'
+            f'<div class="filter-bar">\n'
+            f'  <input type="text" placeholder="Filter rows…" '
+            f'oninput="filterR(\'sec{i}\',this.value)">\n'
+            f'</div>\n'
+            f'<div class="tbl-wrap">\n'
+            f'  <table id="sec{i}-table">\n'
+            f'    <thead>\n'
+            f'      <tr>\n{ths}\n      </tr>\n'
+            f'    </thead>\n'
+            f'    <tbody id="sec{i}-tbody"></tbody>\n'
+            f'  </table>\n'
+            f'</div>\n'
+            f'<div class="pagination" id="sec{i}-pag"></div>'
+        )
+    sections_html = "\n".join(section_blocks)
+    sections_embed = _embed(section_data)
+    charts_embed = _embed(chart_data)
+
+    total_sections = len(model.sections)
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>
+{_REPORT_CSS}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="flex:1">
+    <h1>{title}</h1>
+    <div class="meta">{e(source)} &nbsp;·&nbsp; {e(from_ts)} → {e(to_ts)}</div>
+  </div>
+  <button onclick="window.print()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;">Print</button>
+</div>
+
+<div class="main">
+
+<div class="cards">
+{kpi_cards}
+</div>
+
+{f'<div class="section-title">Distribution</div><div class="charts-grid">{charts_html}</div>' if model.charts else ''}
+
+{sections_html}
+
+<footer>
+  Generated by zammadog {e(version)} &nbsp;·&nbsp; {e(generated_at)}
+</footer>
+
+</div><!-- /main -->
+
+<script type="application/json" id="r-sections-data">{sections_embed}</script>
+<script type="application/json" id="r-charts-data">{charts_embed}</script>
+
+<script>
+const SECTIONS = JSON.parse(document.getElementById('r-sections-data').textContent);
+const CHARTS = JSON.parse(document.getElementById('r-charts-data').textContent);
+const PAGE = 50;
+const SWATCH = ['#818cf8','#34d399','#f59e0b','#ef4444','#38bdf8','#a78bfa','#fb923c','#4ade80','#f472b6','#facc15'];
+
+const state = {{}};
+SECTIONS.forEach(s => {{
+  state[s.name] = {{ data: s.rows.slice(), filtered: s.rows.slice(), page: 0, sortCol: -1, sortDir: 1, cols: s.columns }};
+}});
+
+function esc(s) {{
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}}
+
+function isNumeric(v) {{
+  if (v == null || v === '') return false;
+  return !isNaN(Number(v));
+}}
+
+function renderSection(name) {{
+  const s = state[name];
+  const tbody = document.getElementById(name + '-tbody');
+  const pag = document.getElementById(name + '-pag');
+  const start = s.page * PAGE;
+  const slice = s.filtered.slice(start, start + PAGE);
+  tbody.innerHTML = slice.map(r => {{
+    const cells = s.cols.map((_, i) => `<td>${{esc(r[i] ?? '')}}</td>`).join('');
+    return `<tr>${{cells}}</tr>`;
+  }}).join('');
+  const pages = Math.ceil(s.filtered.length / PAGE);
+  if (pages <= 1) {{ pag.innerHTML = ''; return; }}
+  pag.innerHTML = `
+    <button onclick="goRPage('${{name}}',${{s.page-1}})" ${{s.page===0?'disabled':''}}>← Prev</button>
+    <span class="page-info">Page ${{s.page+1}} / ${{pages}} (${{s.filtered.length}} rows)</span>
+    <button onclick="goRPage('${{name}}',${{s.page+1}})" ${{s.page>=pages-1?'disabled':''}}>Next →</button>
+  `;
+}}
+
+function goRPage(name, p) {{
+  state[name].page = p;
+  renderSection(name);
+}}
+
+function filterR(name, q) {{
+  q = q.toLowerCase();
+  state[name].filtered = state[name].data.filter(r =>
+    r.some(v => String(v ?? '').toLowerCase().includes(q))
+  );
+  state[name].page = 0;
+  renderSection(name);
+}}
+
+function sortR(name, col) {{
+  const s = state[name];
+  if (s.sortCol === col) s.sortDir *= -1;
+  else {{ s.sortCol = col; s.sortDir = 1; }}
+  const type = isNumeric(s.data.find(r => r[col] != null && r[col] !== '')?.[col]) ? 'num' : 'str';
+  s.filtered.sort((a, b) => {{
+    let av = a[col] ?? '', bv = b[col] ?? '';
+    if (type === 'num') {{ av = Number(av) || 0; bv = Number(bv) || 0; }}
+    else {{ av = String(av).toLowerCase(); bv = String(bv).toLowerCase(); }}
+    return av < bv ? -s.sortDir : av > bv ? s.sortDir : 0;
+  }});
+  s.page = 0;
+  document.querySelectorAll('#' + name + '-table thead th').forEach((th, i) => {{
+    th.className = i === col ? (s.sortDir === 1 ? 'asc' : 'desc') : '';
+  }});
+  renderSection(name);
+}}
+
+function hbar(label, value, maxVal, color, annotation) {{
+  const pct = Math.max(2, Math.round((value || 0) / maxVal * 100));
+  return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:12px">
+    <div style="flex-shrink:0;white-space:nowrap;color:var(--muted);text-align:right;font-family:ui-monospace,monospace;font-size:11px" title="${{esc(label)}}">${{esc(label)}}</div>
+    <div style="flex:1;min-width:60px;background:var(--bg3);border-radius:3px;height:16px;overflow:hidden">
+      <div style="width:${{pct}}%;background:${{color}};height:100%;border-radius:3px;opacity:.85"></div>
+    </div>
+    <div style="width:120px;flex-shrink:0;font-size:11px;color:var(--muted)">${{annotation}}</div>
+  </div>`;
+}}
+
+function drawCharts() {{
+  CHARTS.forEach((c, i) => {{
+    const el = document.getElementById('chart-r-' + i);
+    if (!el) return;
+    if (!c.bars.length) {{ el.innerHTML = '<p style="color:var(--muted);font-size:12px">No data</p>'; return; }}
+    const maxVal = Math.max(...c.bars.map(([,v]) => v), 1);
+    el.innerHTML = c.bars.slice(0, 15).map(([label, value], j) =>
+      hbar(String(label), value, maxVal, SWATCH[j % SWATCH.length], String(value))
+    ).join('');
+  }});
+}}
+
+SECTIONS.forEach(s => renderSection(s.name));
+drawCharts();
 </script>
 </body>
 </html>"""

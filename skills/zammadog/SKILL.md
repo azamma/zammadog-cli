@@ -195,6 +195,27 @@ compacts verbose framework lines (e.g. strip MDC/trace prefixes, collapse logger
 `src/zammadog/parsers/example_parser.py` to `<name>_parser.py` in that folder, implement
 `parse(rows) -> rows`, and call `register("<name>", MyParser())` — it is auto-loaded and git-ignored.
 
+**`--report <name>` (parser-driven HTML report).** On `cw logs-filter` / `cw logs-search`, builds a
+self-contained HTML report (KPIs, charts, sortable/filterable tables) **deterministically — no LLM,
+no tokens**. The chosen parser drives it: a parser may implement an optional `report(rows) ->
+ReportModel` hook for business analysis (top error codes, failing endpoints, warn clusters…); parsers
+without the hook fall back to generic message-signature clustering (mask digits/hex/UUIDs, count).
+
+```bash
+# HTML to a file
+zammadog cw logs-filter -g /aws/ecs/my-service -p ERROR --from now-1h --report my-parser --out report.html
+# Report model as JSON (also token-lean, machine-readable)
+zammadog cw logs-search -q 'fields @timestamp,@message' -g /aws/ecs/my-service --from now-1h --report my-parser --json
+```
+
+The report path fetches up to **1000 rows** (not the 50-row search cap) so clustering has real volume.
+`--report` and `--parser` are mutually exclusive (exit 2); `stats` Insights queries are not supported
+with `--report` (exit 2 — use `--json` on the plain query instead).
+
+> Parser report hook depends on field shape: CloudWatch logs carry no structured `level`, so a parser
+> that gates on `status`/level must lift it from the raw message itself (e.g. the leading `ERROR`/`WARN`
+> token) inside `parse()` — otherwise error/warn counts come back 0.
+
 ### Flags
 
 | Flag | Default | Meaning |
@@ -211,7 +232,8 @@ compacts verbose framework lines (e.g. strip MDC/trace prefixes, collapse logger
 | `--endpoints` | none | `apm endpoint-report` — multiple resources in one run |
 | `--html` | off | `apm endpoint-report` — self-contained sortable HTML report |
 | `--ai` | off | `apm endpoint-report` — compact markdown to `~/.claude/tmp/`, prints path |
-| `--out PATH` | stdout | `apm endpoint-report` — write to file instead of stdout |
+| `--out PATH` | stdout | `apm endpoint-report` / `cw logs-* --report` — write to file instead of stdout |
+| `--report NAME` | off | `cw logs-filter`/`logs-search` — parser-driven HTML report (JSON with `--json`); excl. with `--parser`; fetches up to 1000 rows |
 | `-g/--log-group` | required | `cw logs-search` (repeatable) / `cw logs-filter` (single) — log group name |
 | `-p/--pattern` | — | `cw log-groups` name substring / `cw logs-filter` filter pattern (quote `"<trace>"` for substring) |
 | `-G/--groups-pattern` | first 50 | `cw trace` — substring to scope which groups to search |
@@ -276,7 +298,7 @@ zammadog logs search --query "trace_id:<id>" --from now-1h --limit 10
 
 | Limit | Value |
 |-------|-------|
-| Max rows per search | 50 (`cw trace` exempt: up to 1000 — full ordered trace) |
+| Max rows per search | 50 (`cw trace` and `cw logs-* --report` exempt: up to 1000) |
 | Max log groups per `cw trace` query | 50 (Insights limit; scope with `-G`) |
 | Max time window | 24 h |
 | HTTP timeout | 15 s |

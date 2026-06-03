@@ -6,14 +6,16 @@ import json
 import os
 import sys
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from .client import DatadogClient, DatadogError, RateLimit
-from .cloudwatch_client import CloudWatchClient, CloudWatchError
+from .cloudwatch_client import REPORT_MAX, CloudWatchClient, CloudWatchError
 from .compact import AggregateRow
 from .evidence import gather_evidence
 from .links import extract_datadog_links
 from .parsers import get_parser, parser_names, render_parsed
-from .render import render_aggregate, render_cw_trace, render_endpoint_report, render_endpoint_report_ai, render_endpoint_report_html, render_log_groups, render_logs_table, render_metrics, render_spans_table, render_trace_stats, render_trace_summary
+from .render import render_aggregate, render_cw_trace, render_endpoint_report, render_endpoint_report_ai, render_endpoint_report_html, render_log_groups, render_logs_table, render_metrics, render_report_html, render_spans_table, render_trace_stats, render_trace_summary
+from .report import ReportingParser, build_generic_report
 
 VERSION = "0.1.0"
 
@@ -232,7 +234,73 @@ def _apply_parser(args: argparse.Namespace, rows: list, default_render):
     return parser.parse(rows), render_parsed
 
 
+def _run_report(rows, args, source: str) -> int:
+    """Build the ReportModel from the parser (or generic fallback) and emit HTML/JSON.
+
+    Called from the cw logs handlers when ``--report`` is set. ``source`` is the
+    header subtitle (typically log group(s) or query).
+    """
+    parser = _resolve_parser(getattr(args, "report", None))
+    cleaned = parser.parse(rows)
+    if isinstance(parser, ReportingParser):
+        model = parser.report(cleaned)
+    else:
+        model = build_generic_report(cleaned)
+
+    if args.json:
+        payload = {
+            "title": model.title,
+            "kpis": [asdict(k) for k in model.kpis],
+            "charts": [{"title": c.title, "bars": c.bars} for c in model.charts],
+            "sections": [asdict(s) for s in model.sections],
+            "source": source,
+            "from_ts": args.from_ts,
+            "to_ts": args.to_ts,
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    html = render_report_html(
+        model,
+        source=source,
+        time_range=(args.from_ts, args.to_ts),
+        generated_at=generated_at,
+        version=VERSION,
+    )
+    out_path = getattr(args, "out", None)
+    if out_path:
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(html)
+    else:
+        print(html)
+    return 0
+
+
 def cmd_cw_logs_search(args: argparse.Namespace) -> int:
+    report_name = getattr(args, "report", None)
+    if report_name:
+        if getattr(args, "parser", None):
+            print("Error: --report and --parser are mutually exclusive", file=sys.stderr)
+            return 2
+        rows = _cw_client().logs_insights(
+            args.query,
+            args.from_ts,
+            args.to_ts,
+            log_groups=args.log_group,
+            limit=REPORT_MAX,
+            max_cap=REPORT_MAX,
+        )
+        if rows and isinstance(rows[0], AggregateRow):
+            print(
+                "Error: --report is not supported with stats queries "
+                "(use --json for raw results instead)",
+                file=sys.stderr,
+            )
+            return 2
+        source = f"{args.query}  |  groups: {', '.join(args.log_group)}"
+        return _run_report(rows, args, source)
+
     rows = _cw_client().logs_insights(
         args.query,
         args.from_ts,
@@ -249,6 +317,22 @@ def cmd_cw_logs_search(args: argparse.Namespace) -> int:
 
 
 def cmd_cw_logs_filter(args: argparse.Namespace) -> int:
+    report_name = getattr(args, "report", None)
+    if report_name:
+        if getattr(args, "parser", None):
+            print("Error: --report and --parser are mutually exclusive", file=sys.stderr)
+            return 2
+        rows = _cw_client().logs_filter(
+            args.log_group,
+            args.pattern,
+            args.from_ts,
+            args.to_ts,
+            limit=REPORT_MAX,
+            max_cap=REPORT_MAX,
+        )
+        source = f"log-group: {args.log_group}" + (f"  |  pattern: {args.pattern}" if args.pattern else "")
+        return _run_report(rows, args, source)
+
     rows = _cw_client().logs_filter(
         args.log_group,
         args.pattern,
@@ -421,6 +505,8 @@ def main(argv: list[str] | None = None) -> None:
     cws_p.add_argument("--log-group", "-g", action="append", required=True)
     cws_p.add_argument("--limit", type=int, default=25)
     cws_p.add_argument("--parser", metavar="NAME", help="Local business log parser (see src/zammadog/parsers/example_parser.py)")
+    cws_p.add_argument("--report", metavar="NAME", help="Parser-driven HTML/JSON report (use same name as --parser; rows go through that parser first)")
+    cws_p.add_argument("--out", default=None, metavar="PATH", help="Write report HTML to file (default: stdout)")
     _add_time_args(cws_p)
     _add_json(cws_p)
     cws_p.set_defaults(func=cmd_cw_logs_search)
@@ -430,6 +516,8 @@ def main(argv: list[str] | None = None) -> None:
     cwf_p.add_argument("--pattern", "-p", default="")
     cwf_p.add_argument("--limit", type=int, default=25)
     cwf_p.add_argument("--parser", metavar="NAME", help="Local business log parser (see src/zammadog/parsers/example_parser.py)")
+    cwf_p.add_argument("--report", metavar="NAME", help="Parser-driven HTML/JSON report (use same name as --parser; rows go through that parser first)")
+    cwf_p.add_argument("--out", default=None, metavar="PATH", help="Write report HTML to file (default: stdout)")
     _add_time_args(cwf_p)
     _add_json(cwf_p)
     cwf_p.set_defaults(func=cmd_cw_logs_filter)
@@ -449,8 +537,9 @@ def main(argv: list[str] | None = None) -> None:
         parser.print_help()
         sys.exit(2)
 
-    # Validate --parser up front so a bad name fails before any API call.
+    # Validate --parser / --report up front so a bad name fails before any API call.
     _resolve_parser(getattr(args, "parser", None))
+    _resolve_parser(getattr(args, "report", None))
 
     try:
         rc = args.func(args)

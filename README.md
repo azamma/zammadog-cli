@@ -103,12 +103,25 @@ zammadog cw logs-filter -g /aws/ecs/my-service -p '"<trace_id>"' --from now-2h
 
 # Metrics — fetch datapoints for a metric with optional dimensions
 zammadog cw metrics -n AWS/Lambda -m Errors -d FunctionName=my-fn --stat Sum --period 300 --from now-3h
+
+# Parser-driven HTML report — deterministic, no tokens (analogous to apm endpoint-report --html)
+zammadog cw logs-filter -g /aws/ecs/my-service -p ERROR --from now-1h --report my-parser --out report.html
+zammadog cw logs-search -q 'fields @timestamp,@message' -g /aws/ecs/my-service --from now-1h --report my-parser --json
 ```
 
 > Optional: `cw logs-*`/`cw trace` accept `--parser <name>` to pass output through a parser that
 > compacts verbose framework logs. The committed `example` parser is a template — copy
 > `src/zammadog/parsers/example_parser.py` to `<name>_parser.py` in that folder and
 > `register("<name>", MyParser())`. New parser modules there are auto-loaded and git-ignored.
+
+> **`--report <parser>`** (on `cw logs-filter` / `cw logs-search`): generates a self-contained,
+> deterministic HTML report (KPIs, charts, sortable/filterable tables) — built by code, no LLM
+> tokens. The chosen parser drives it: a parser may implement an optional `report(rows) ->
+> ReportModel` hook for business-specific analysis (error codes, endpoints, …); parsers without
+> the hook fall back to generic message-signature clustering. The report path fetches up to 1000
+> rows (not the 50-row search cap) so clustering has real volume. `--report` and `--parser` are
+> mutually exclusive; with `--json` it emits the report model as JSON; stats (`stats …`) Insights
+> queries are not supported with `--report`.
 
 ### Flags
 
@@ -123,7 +136,8 @@ zammadog cw metrics -n AWS/Lambda -m Errors -d FunctionName=my-fn --stat Sum --p
 | `--stats` | off | `apm trace` only — show min/max/avg duration |
 | `--html` | off | `endpoint-report` — self-contained HTML report |
 | `--ai` | off | `endpoint-report` — compact markdown to `~/.claude/tmp/`, prints path |
-| `--out PATH` | stdout | `endpoint-report` — write to file instead of stdout |
+| `--out PATH` | stdout | `endpoint-report` / `cw logs-* --report` — write to file instead of stdout |
+| `--report NAME` | off | `cw logs-filter`/`logs-search` — parser-driven HTML report (JSON with `--json`); excl. with `--parser` |
 | `--service` | none | `endpoint-report` — filter by service name |
 | `--sample N` | `5` | `endpoint-report` — traces to sample |
 | `--endpoints` | none | `endpoint-report` — multiple resources in one run |

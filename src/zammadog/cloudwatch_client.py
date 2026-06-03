@@ -17,6 +17,9 @@ DEFAULT_LIMIT = 25
 # A distributed trace is one ordered stream — the 50-row search guard is too small,
 # so trace() allows many more lines (Insights start_query itself caps at 10000).
 TRACE_MAX = 1000
+# filter_log_events admits up to 10000 events in a single call; the --report path
+# uses this cap to surface enough logs for the report's frequency analysis.
+REPORT_MAX = 1000
 
 
 class CloudWatchError(Exception):
@@ -257,6 +260,7 @@ class CloudWatchClient:
         to_ts: str,
         *,
         limit: int = DEFAULT_LIMIT,
+        max_cap: int = MAX_LIMIT,
     ) -> list[CompactLog]:
         """Filter log events in a single log group.
 
@@ -266,6 +270,8 @@ class CloudWatchClient:
             from_ts: Start time spec.
             to_ts: End time spec.
             limit: Max events to return.
+            max_cap: Hard ceiling applied to ``limit``. The --report path passes
+                ``REPORT_MAX``; other callers stick with the safe 50-row default.
 
         Returns:
             List of CompactLog rows.
@@ -273,7 +279,7 @@ class CloudWatchClient:
         Raises:
             CloudWatchError: On API failure.
         """
-        limit = min(limit, MAX_LIMIT)
+        limit = min(limit, max_cap)
         try:
             _window_guard(from_ts, to_ts)
         except DatadogError as exc:
@@ -287,7 +293,7 @@ class CloudWatchClient:
                 filterPattern=pattern,
                 startTime=start_time,
                 endTime=end_time,
-                limit=min(limit, MAX_LIMIT),
+                limit=limit,
             )
         except Exception as exc:
             raise CloudWatchError(f"Failed to filter log events: {exc}") from exc
